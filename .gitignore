@@ -1,0 +1,30 @@
+# ---- ONLYOFFICE upstream repos (tracked via MANIFEST.md + patches/, NOT vendored) ----
+/build_tools/
+/core/
+/desktop-apps/
+/desktop-sdk/
+/dictionaries/
+/document-templates/
+/sdkjs/
+/web-apps/
+
+# ---- build & tooling output ----
+backup*/
+build/
+out/
+installer-output/
+node_modules/
+*.log
+
+# ---- binaries ----
+*.exe
+*.dll
+*.pdb
+*.obj
+*.lib
+
+# ---- os / editor ----
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
