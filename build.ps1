@@ -90,6 +90,41 @@ if (Test-Path $vsToolchain) {
     }
 }
 
+# v8 bundles a jinja2 old enough to import the collections ABCs from
+# `collections`, which Python 3.10 removed - they have lived in
+# `collections.abc` since 3.3. On Python 3.11 that breaks the inspector
+# protocol code generator and takes the whole ninja run down with
+#
+#     ImportError: cannot import name 'Mapping' from 'collections'
+#
+# v8_89.py anticipates this but patches only tests.py, and guards the patch on
+# the absence of tests.py.bak. Once a run has created that .bak, a later
+# gclient sync restores the pristine tests.py while the .bak survives, so the
+# guard skips and the file stays broken. Five files are affected in total.
+#
+# Rewriting the imports to collections.abc is safe on every Python 3 version
+# this build could plausibly use. Idempotent, and re-applied each run because
+# gclient sync keeps restoring the originals.
+$jinja = Join-Path $root 'core\Common\3dParty\v8_89\v8\third_party\jinja2'
+if (Test-Path $jinja) {
+    $abcNames = 'Mapping|MutableMapping|MutableSet|MutableSequence|Set|Sequence|Iterable|Callable|Hashable'
+    $patched = 0
+    foreach ($f in Get-ChildItem $jinja -Filter '*.py' -File) {
+        $src = Get-Content $f.FullName -Raw
+        # Only touch imports whose names are ABCs; deque and namedtuple still
+        # live in `collections` and must be left alone.
+        $new = [regex]::Replace($src,
+            "from collections import ((?:\s*(?:$abcNames)\s*,)*\s*(?:$abcNames)\s*)$",
+            'from collections.abc import $1',
+            [Text.RegularExpressions.RegexOptions]::Multiline)
+        if ($new -ne $src) {
+            Set-Content $f.FullName $new -NoNewline
+            $patched++
+        }
+    }
+    if ($patched) { Write-Host "patched $patched jinja2 file(s) for collections.abc" -ForegroundColor Yellow }
+}
+
 $logDir = Join-Path $root 'logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $log = Join-Path $logDir ("build-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
