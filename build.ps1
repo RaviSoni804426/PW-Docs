@@ -72,6 +72,9 @@ try {
 
     $errLog = [IO.Path]::ChangeExtension($log, '.err.log')
     Write-Host "make.py -> $log" -ForegroundColor Cyan
+    # Note: this inherits whatever job object build.ps1 itself belongs to.
+    # To survive the launching shell, start build.ps1 through start-build.ps1
+    # rather than running it directly - see the comment there.
     $proc = Start-Process -FilePath 'python' -ArgumentList 'make.py' `
         -RedirectStandardOutput $log -RedirectStandardError $errLog `
         -NoNewWindow -PassThru
