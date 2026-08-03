@@ -64,6 +64,32 @@ $env:PYTHONUNBUFFERED = '1'
 $VsRoot = 'C:\BuildTools2019'
 $env:vs2019_install = $VsRoot
 
+# v8's _CopyDebugger() hard-fails 'gn gen' if these two API-set stubs are
+# missing from the SDK's Debuggers directory. They ship with the Windows SDK
+# "Debugging Tools for Windows" feature, which is only partially installed here
+# - dbghelp.dll and dbgcore.dll are present, the api-ms-win-* stubs are not.
+#
+# They are runtime companions for dbghelp.dll, needed when a binary in the
+# output directory symbolizes its own stacks. We build v8 as a static
+# monolithic library to link into core; nothing is ever run out of that
+# directory, so their absence cannot affect the product. Marking them optional
+# is the same kind of local build-environment patch v8_89.py already applies to
+# this file. Idempotent, and re-applied here because a gclient sync restores
+# the pristine copy.
+$vsToolchain = Join-Path $root 'core\Common\3dParty\v8_89\v8\build\vs_toolchain.py'
+if (Test-Path $vsToolchain) {
+    $tc = Get-Content $vsToolchain -Raw
+    $needle = "debug_files.extend([('api-ms-win-downlevel-kernel32-l2-1-0.dll', False),`n                        ('api-ms-win-eventing-provider-l1-1-0.dll', False)])"
+    if ($tc.Contains("('api-ms-win-downlevel-kernel32-l2-1-0.dll', False)")) {
+        $tc = $tc.Replace("('api-ms-win-downlevel-kernel32-l2-1-0.dll', False)",
+                          "('api-ms-win-downlevel-kernel32-l2-1-0.dll', True)")
+        $tc = $tc.Replace("('api-ms-win-eventing-provider-l1-1-0.dll', False)",
+                          "('api-ms-win-eventing-provider-l1-1-0.dll', True)")
+        Set-Content $vsToolchain $tc -NoNewline
+        Write-Host "patched vs_toolchain.py: debugger API-set stubs made optional" -ForegroundColor Yellow
+    }
+}
+
 $logDir = Join-Path $root 'logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $log = Join-Path $logDir ("build-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
