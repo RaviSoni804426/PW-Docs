@@ -1,45 +1,66 @@
 <#
-    PW Docs - start the build so it survives the shell that launched it.
+    PW Docs - start the build so nothing that happens to this shell can kill it.
 
-        powershell -File start-build.ps1
+        powershell -File start-build.ps1            # build only
+        powershell -File start-build.ps1 -Finish    # build, then package
 
-    Why this is not just "run build.ps1":
+    Two separate things can kill a long build, and they need different fixes:
 
-    The build takes hours. A process started normally - including via
-    Start-Process -NoNewWindow - stays inside the launching shell's process
-    tree and job object, so when that shell goes away (terminal closed, agent
-    session torn down, SSH dropped) Windows kills the whole tree with it. That
-    happened once mid-way through the v8 stage: the git clone was killed, then
-    gclient sat stalled for five minutes before v8_89.py died on
-    os.chdir("v8") because the checkout it expected was never finished.
+    1. Process-tree teardown. A process started normally - including via
+       Start-Process -NoNewWindow - stays inside the launching shell's job
+       object, so Windows kills it when that shell goes away. This ended one
+       run mid-way through the v8 fetch.
 
-    Creating the process through WMI instead parents it to WmiPrvSE rather
-    than to us, so it is outside our job object and outlives the session.
+    2. Console signals. Creating the process through WMI escapes the job
+       object but leaves it attached to the same console, so a Ctrl-C
+       delivered there still reaches it. This ended a later run 50% of the way
+       through the v8 compile - the log simply ends in "^C".
+
+    Registering a scheduled task solves both: Task Scheduler owns the process,
+    it has no console, and it is in no job object of ours.
 
     Progress:  Get-Content .\logs\build-<stamp>.log -Wait -Tail 20
-    Stop:      Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-                 Where-Object CommandLine -like '*make.py*' |
-                 ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+    Status:    schtasks /query /tn PWDocsBuild
+    Stop:      schtasks /end /tn PWDocsBuild
 #>
 [CmdletBinding()]
 param(
-    [switch]$Clean
+    [switch]$Clean,
+    # Also run make_installer.ps1 once the build succeeds.
+    [switch]$Finish
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+$taskName = 'PWDocsBuild'
 
-$cmd = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{0}\build.ps1"' -f $root
-if ($Clean) { $cmd += ' -Clean' }
+$script = if ($Finish) { 'build-and-package.ps1' } else { 'build.ps1' }
+$inner = '-NoProfile -ExecutionPolicy Bypass -File "{0}\{1}"' -f $root, $script
+if ($Clean) { $inner += ' -Clean' }
 
-$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-    CommandLine      = $cmd
-    CurrentDirectory = $root
-}
+# Registered through the cmdlets rather than schtasks.exe because the defaults
+# schtasks applies are wrong for a build this long, and silently so: it sets
+# DisallowStartIfOnBatteries and StopIfGoingOnBatteries, so on a laptop running
+# unplugged the task just sits at status "Queued" with last result 0 - it looks
+# like it ran and succeeded instantly. It also caps ExecutionTimeLimit at 72h,
+# which is fine, but the battery flags are not.
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $inner -WorkingDirectory $root
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -ExecutionTimeLimit ([TimeSpan]::FromHours(12)) `
+    -MultipleInstances IgnoreNew `
+    -StartWhenAvailable
+# Deliberately not -RunLevel Highest: registering an elevated task needs admin,
+# and the build has no need for elevation.
+$principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+    -LogonType Interactive
 
-if ($result.ReturnValue -ne 0) {
-    throw "Win32_Process.Create failed with code $($result.ReturnValue)"
-}
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName $taskName -Action $action -Settings $settings `
+    -Principal $principal | Out-Null
+Start-ScheduledTask -TaskName $taskName
 
-Write-Host "Build started detached, pid $($result.ProcessId)" -ForegroundColor Green
-Write-Host "It is parented to WmiPrvSE and will keep running after this shell exits."
+Write-Host "Build started as scheduled task '$taskName'." -ForegroundColor Green
+Write-Host "It has no console and is outside this shell's job object, so neither"
+Write-Host "Ctrl-C here nor this session ending will stop it."

@@ -1,0 +1,3 @@
+configure: configure.py --module desktop --platform win_64 --update 0 --clean 0 --qt-dir C:\Qt\5.15.2 --vs-version 2019 --vs-path C:\BuildTools2019\VC\Auxiliary\Build
+make.py -> D:\pw-docs\logs\build-20260803-163602.log
+make.py pid: 20752
