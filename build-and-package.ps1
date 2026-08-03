@@ -25,9 +25,10 @@ function Say($msg) {
 
 Say "=== build starting ==="
 
-# build.ps1 waits for make.py unless -NoWait is passed, so this blocks until
-# the build is done and gives us its real exit code.
-& (Join-Path $root 'build.ps1') @PSBoundParameters
+# build.ps1 blocks until make.py finishes and exits with its code. Only -Clean
+# is forwarded: -Version belongs to the packaging step, and splatting the whole
+# bound-parameter set would hand build.ps1 an argument it does not declare.
+if ($Clean) { & (Join-Path $root 'build.ps1') -Clean } else { & (Join-Path $root 'build.ps1') }
 $code = $LASTEXITCODE
 
 if ($code -ne 0) {

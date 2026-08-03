@@ -144,27 +144,20 @@ try {
     Write-Host "configure: $($configureArgs -join ' ')" -ForegroundColor Cyan
     & python @configureArgs
 
-    $errLog = [IO.Path]::ChangeExtension($log, '.err.log')
     Write-Host "make.py -> $log" -ForegroundColor Cyan
-    # Note: this inherits whatever job object build.ps1 itself belongs to.
-    # To survive the launching shell, start build.ps1 through start-build.ps1
-    # rather than running it directly - see the comment there.
-    $proc = Start-Process -FilePath 'python' -ArgumentList 'make.py' `
-        -RedirectStandardOutput $log -RedirectStandardError $errLog `
-        -NoNewWindow -PassThru
-    Write-Host ("make.py pid: {0}" -f $proc.Id) -ForegroundColor Cyan
+    # Run python directly rather than through Start-Process. Under a scheduled
+    # task there is no console, and the Start-Process -NoNewWindow +
+    # WaitForExit combination did not survive that: make.py ran as far as
+    # `gn gen` and then vanished, while the waiting parent sat there with no
+    # child and no error on either stream. Invoking it inline keeps everything
+    # in one process the task owns, and cmd handles the redirection.
+    $code = (Start-Process -FilePath 'cmd.exe' `
+        -ArgumentList '/c', ('python make.py > "{0}" 2>&1' -f $log) `
+        -Wait -PassThru -WindowStyle Hidden).ExitCode
 }
 finally {
     Pop-Location
 }
-
-if ($NoWait) {
-    Write-Host "started detached; follow with: Get-Content `"$log`" -Wait -Tail 20"
-    exit 0
-}
-
-$proc.WaitForExit()
-$code = $proc.ExitCode
 Write-Host ("make.py exit code: {0}" -f $code) -ForegroundColor $(if ($code -eq 0) { 'Green' } else { 'Red' })
 Write-Host "log: $log"
 exit $code
