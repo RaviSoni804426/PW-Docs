@@ -36,35 +36,27 @@ def _font(px, bold=True):
     return ImageFont.load_default()
 
 
-def doc_mark(size):
-    """The PW Docs page mark, drawn at `size` px square on transparency."""
-    s = size
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    pad = max(1, s // 16)
-    d.rounded_rectangle([pad, pad, s - pad, s - pad], radius=max(2, s // 8), fill=DOC_BLUE)
+_MARK_CACHE = {}
 
-    m = max(2, s // 5)
-    fold = max(2, s // 6)
-    left, right, top, bottom = m, s - m, m, s - m
-    d.polygon([(left, top), (right - fold, top), (right, top + fold),
-               (right, bottom), (left, bottom)], fill=(255, 255, 255, 245))
-    d.polygon([(right - fold, top), (right - fold, top + fold), (right, top + fold)],
-              fill=(214, 224, 236, 245))
 
-    if s >= 32:
-        pad_x = max(1, (right - left) // 6)
-        x0, x1 = left + pad_x, right - pad_x
-        y = top + fold + max(1, s // 14)
-        gap = max(2, s // 10)
-        thick = max(1, s // 32)
-        n = 4 if s >= 64 else 3
-        for i in range(n):
-            if y + thick > bottom - max(1, s // 12):
-                break
-            xr = x1 if i < n - 1 else x0 + (x1 - x0) * 0.55
-            d.rectangle([x0, y, xr, y + thick], fill=DOC_BLUE)
-            y += gap
+def doc_mark(size, theme="Light"):
+    """The PW monogram, drawn at `size` px square on transparency.
+
+    Sourced from branding/logo/, produced by make_logo.py from the supplied
+    artwork. The mark is solid black, so the dark wizard variant uses the
+    white recolour - otherwise it disappears into the panel.
+    """
+    key = (size, theme)
+    if key in _MARK_CACHE:
+        return _MARK_CACHE[key]
+
+    name = "pw-mark-white.png" if theme == "Dark" else "pw-mark-black.png"
+    path = os.path.join(HERE, "logo", name)
+    if not os.path.isfile(path):
+        raise SystemExit("missing %s - run make_logo.py first" % path)
+
+    img = Image.open(path).convert("RGBA").resize((size, size), Image.LANCZOS)
+    _MARK_CACHE[key] = img
     return img
 
 
@@ -79,7 +71,7 @@ def wiz_image(w, h, theme):
     d.pieslice([w * 0.45, -h * 0.16, w * 1.50, h * 0.30], 0, 360, fill=t["blobs"][2])
 
     mark = max(28, int(w * 0.30))
-    m = doc_mark(mark)
+    m = doc_mark(mark, theme)
     img.paste(m, ((w - mark) // 2, int(h * 0.38) - mark // 2), m)
 
     f_title = _font(max(11, int(w * 0.115)), bold=True)
@@ -98,7 +90,7 @@ def small_image(s, theme):
     t = THEMES[theme]
     img = Image.new("RGB", (s, s), t["bg"])
     mark = int(s * 0.72)
-    m = doc_mark(mark)
+    m = doc_mark(mark, theme)
     img.paste(m, ((s - mark) // 2, (s - mark) // 2), m)
     return img
 
