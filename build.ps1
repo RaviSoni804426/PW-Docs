@@ -51,6 +51,19 @@ $env:NoDefaultCurrentDirectoryInExePath = $null
 # while the build runs, and so a crash does not take the tail of the log with it.
 $env:PYTHONUNBUFFERED = '1'
 
+# Visual Studio 2019, which the Qt msvc2019_64 kit requires. This install is
+# not in the default location, and that matters twice over:
+#
+#   - build_tools needs the vcvarsall directory, passed as --vs-path below.
+#   - v8's build/vs_toolchain.py does its own detection and looks only at
+#     %ProgramFiles(x86)%\Microsoft Visual Studio\<year>\<edition> plus the
+#     vs<year>_install variable. With neither matching it fails 'gn gen' with
+#     "No supported Visual Studio can be found", even though build_tools found
+#     the compiler perfectly well. The 2022 Build Tools that *are* in the
+#     default location do not help: v8 8.9 accepts only 2017 and 2019.
+$VsRoot = 'C:\BuildTools2019'
+$env:vs2019_install = $VsRoot
+
 $logDir = Join-Path $root 'logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $log = Join-Path $logDir ("build-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -65,7 +78,7 @@ try {
         '--clean', $(if ($Clean) { '1' } else { '0' })
         '--qt-dir', 'C:\Qt\5.15.2'
         '--vs-version', '2019'     # matches the Qt msvc2019_64 kit
-        '--vs-path', 'C:\BuildTools2019\VC\Auxiliary\Build'
+        '--vs-path', (Join-Path $VsRoot 'VC\Auxiliary\Build')
     )
     Write-Host "configure: $($configureArgs -join ' ')" -ForegroundColor Cyan
     & python @configureArgs
