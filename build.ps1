@@ -125,6 +125,28 @@ if (Test-Path $jinja) {
     if ($patched) { Write-Host "patched $patched jinja2 file(s) for collections.abc" -ForegroundColor Yellow }
 }
 
+# Stop anything running out of the build output before starting.
+#
+# The deploy stage wipes build_tools/out and recreates it. If the app has been
+# launched from there to try a change - or the updater it spawns is still
+# alive - the DLLs they hold open cannot be deleted, and the build dies deep
+# into the deploy step with
+#
+#     PermissionError: [WinError 5] Access is denied: ...ascdocumentscore.dll
+#
+# which points at the file rather than at the process holding it.
+$outDir = Join-Path $root 'build_tools\out'
+if (Test-Path $outDir) {
+    $held = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($outDir, 'OrdinalIgnoreCase') }
+    foreach ($p in $held) {
+        Write-Host ("stopping {0} (pid {1}) - it holds files in the output tree" -f `
+            $p.Name, $p.ProcessId) -ForegroundColor Yellow
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    if ($held) { Start-Sleep -Seconds 2 }
+}
+
 $logDir = Join-Path $root 'logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $log = Join-Path $logDir ("build-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
