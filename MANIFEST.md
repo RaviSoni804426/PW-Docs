@@ -72,3 +72,4 @@ rather than vendored. Apply them after cloning.
 | Patch | What it changes |
 |---|---|
 | `projicons-appusermodelid.patch` | Gives PW Docs its own `APP_USER_MODEL_ID`. `ProjIcons.pro` declares it a second time, separately from `defines.h`, and was left on the upstream value — so Windows grouped PW Docs' taskbar button with any other app carrying it. |
+| `version-own-number.patch` | Sets PW Docs' version to 1.0.0.0. It carried PW Office's 5.3.95.508, so the binary disagreed with the installer and three apps shared one FileVersion. |

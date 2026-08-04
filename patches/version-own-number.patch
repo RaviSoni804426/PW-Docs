@@ -1,0 +1,20 @@
+Give PW Docs its own version number.
+
+desktop-apps/win-linux/src/version.h carried 5.3.95.508 - PW Office's
+version, copied along with the fork and never changed. PW Docs' installer
+declares 1.0.0.0, so the binary and the package disagreed, and three of the
+five apps reported the same FileVersion as each other. It surfaced in the
+update prompt, which read "Current version: 5.3.95.508" no matter which app
+raised it.
+
+Apply to: desktop-apps/win-linux/src/version.h
+
+@@
+-# define VER_NUM_MAJOR              5
+-# define VER_NUM_MINOR              3
+-# define VER_NUM_BUILD              95
+-# define VER_NUM_REVISION           508
++# define VER_NUM_MAJOR              1
++# define VER_NUM_MINOR              0
++# define VER_NUM_BUILD              0
++# define VER_NUM_REVISION           0
