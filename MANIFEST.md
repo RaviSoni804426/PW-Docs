@@ -63,3 +63,12 @@ both authoritative and free of disk cost.
 ONLYOFFICE is licensed under AGPL v3. PW Docs is a derivative work and carries
 the same license. Source must be made available to users of the distributed
 binary.
+
+## Local modifications
+
+Source changes live in `patches/`, since the upstream repos above are fetched
+rather than vendored. Apply them after cloning.
+
+| Patch | What it changes |
+|---|---|
+| `projicons-appusermodelid.patch` | Gives PW Docs its own `APP_USER_MODEL_ID`. `ProjIcons.pro` declares it a second time, separately from `defines.h`, and was left on the upstream value — so Windows grouped PW Docs' taskbar button with any other app carrying it. |

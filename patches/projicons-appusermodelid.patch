@@ -1,0 +1,18 @@
+Give PW Docs its own AppUserModelID.
+
+extras/projicons/ProjIcons.pro declares APP_USER_MODEL_ID a second time,
+separately from desktop-apps/win-linux/src/defines.h. defines.h was rebranded
+to PW.Docs.1; this one was left at the upstream ASC.Documents.5, and it is the
+value the projicons subproject actually compiles. Windows groups taskbar
+buttons and jumplists by that id, so PW Docs shared a taskbar entry with any
+other app still carrying it.
+
+Apply to: desktop-apps/win-linux/extras/projicons/ProjIcons.pro
+
+--- a/desktop-apps/win-linux/extras/projicons/ProjIcons.pro
++++ b/desktop-apps/win-linux/extras/projicons/ProjIcons.pro
+@@ -4,5 +4,5 @@
+ DEFINES += APP_ICON_PATH=\"./res/icons/pwdocs.ico\"
+-DEFINES += APP_USER_MODEL_ID=\\\"ASC.Documents.5\\\"
++DEFINES += APP_USER_MODEL_ID=\\\"PW.Docs.1\\\"
+ DEFINES += COPYRIGHT_YEAR=$${CURRENT_YEAR}
