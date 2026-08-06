@@ -1,0 +1,117 @@
+Open the app instead of doing nothing when the previous instance is wedged.
+
+editors.exe enforces single-instance with a named mutex plus a hidden receiver
+window, and a second launch hands its command line to the first over
+WM_COPYDATA. A crash or a forced kill can leave a process that still holds the
+mutex and still owns that receiver window but no longer pumps messages.
+
+sendMessage() used a blocking SendMessage, which never returns against a target
+like that. So the new instance hung forever: no window, no error, and it never
+exited - it just became another mutex holder. Every further click of the icon
+stacked up one more stuck process behind the same mutex.
+
+That is what made clicking the icon look like it did nothing at all, and why it
+seemed intermittent: a cold machine is fine, but once anything wedges the icon
+stays dead until reboot and each click makes it worse. One machine was found
+with 13 windowless editors.exe processes, some over a day old.
+
+Give the hand-off a time limit, and when nothing answers take the primary role
+and start normally rather than exiting. This is the same fix PW Office already
+carries; the three files are byte-identical to it.
+
+Apply to: desktop-apps/win-linux/src/main.cpp
+          desktop-apps/win-linux/src/platform_win/singleapplication.cpp
+          desktop-apps/win-linux/src/platform_win/singleapplication.h
+diff --git a/win-linux/src/main.cpp b/win-linux/src/main.cpp
+index 9e8fd7c..d2028b5 100644
+--- a/win-linux/src/main.cpp
++++ b/win-linux/src/main.cpp
+@@ -161,8 +161,22 @@ int main( int argc, char *argv[] )
+             }
+         }
+         bool res = app.sendMessage(_out_args.toUtf8());
+-        CLogger::log("The instance is not primary and will be closed. Parameter sending status: " + QString::number(res));
+-        return 0;
++        if ( res ) {
++            CLogger::log("The instance is not primary and will be closed. Parameter sending status: " + QString::number(res));
++            return 0;
++        }
++
++        /* The mutex is held, but nothing answered within the retry window, so
++           the owning process is gone or wedged - a crash or a forced kill
++           leaves one behind with no window. Exiting here is what made clicking
++           the icon appear to do nothing at all: no window, no error, and every
++           further click piled up another stuck process behind the same mutex.
++           Take the primary role instead and start normally. */
++        CLogger::log("The mutex is held but no primary window answered; taking over as primary.");
++        if ( !app.takeOverAsPrimary() ) {
++            CLogger::log("Could not take over as primary; closing.");
++            return 0;
++        }
+     }
+ 
+     app.setAttribute(Qt::AA_UseHighDpiPixmaps);
+diff --git a/win-linux/src/platform_win/singleapplication.cpp b/win-linux/src/platform_win/singleapplication.cpp
+index fbabe1d..26a0057 100644
+--- a/win-linux/src/platform_win/singleapplication.cpp
++++ b/win-linux/src/platform_win/singleapplication.cpp
+@@ -42,6 +42,8 @@
+ #define RECEIVER_WINDOW WINDOW_CLASS_NAME
+ #define RETRIES_COUNT 10
+ #define RETRIES_DELAY_MS 500
++// Ceiling on how long we wait for a primary to acknowledge the command line.
++#define SEND_TIMEOUT_MS 5000
+ 
+ 
+ SingleApplication::SingleApplication(int &argc, char *argv[]) :
+@@ -90,13 +92,34 @@ bool SingleApplication::sendMessage(const QByteArray &message)
+         COPYDATASTRUCT MyCDS = {1};
+         MyCDS.cbData = sizeof(WCHAR) * (wcslen(cm_line) + 1);
+         MyCDS.lpData = cm_line;
+-        SendMessage(hwnd, WM_COPYDATA, WPARAM(0), LPARAM((LPVOID)&MyCDS));
++
++        /* SendMessage blocks until the target pumps the message. A primary
++           that still owns its window but has stopped responding would hang
++           this process forever - which is what left windowless instances
++           lying around, one per click, none of them ever showing a window.
++           Give up after a few seconds and report failure so the caller can
++           take over as primary instead. */
++        DWORD_PTR result = 0;
++        LRESULT sent = SendMessageTimeout(hwnd, WM_COPYDATA, WPARAM(0), LPARAM((LPVOID)&MyCDS),
++                                          SMTO_ABORTIFHUNG, SEND_TIMEOUT_MS, &result);
+         delete[] cm_line;
+-        return true;
++        return sent != 0;
+     }
+     return false;
+ }
+ 
++bool SingleApplication::takeOverAsPrimary()
++{
++    if (m_isPrimary)
++        return true;
++
++    // The mutex is held by a process that never answered. Register the
++    // receiver window ourselves and carry on as the primary instance.
++    startPrimary();
++    m_isPrimary = (m_hWnd != nullptr);
++    return m_isPrimary;
++}
++
+ void SingleApplication::startPrimary()
+ {
+     HINSTANCE hInstance = GetModuleHandle(nullptr);
+diff --git a/win-linux/src/platform_win/singleapplication.h b/win-linux/src/platform_win/singleapplication.h
+index 2723b2a..5c44ce4 100644
+--- a/win-linux/src/platform_win/singleapplication.h
++++ b/win-linux/src/platform_win/singleapplication.h
+@@ -50,6 +50,9 @@ public:
+ 
+     bool isPrimary() const;
+     bool sendMessage(const QByteArray &message);
++    // Claim the primary role when the process that owns the mutex is no
++    // longer answering. See the call site in main.cpp.
++    bool takeOverAsPrimary();
+ 
+ signals:
+     void receivedMessage(QByteArray message);
